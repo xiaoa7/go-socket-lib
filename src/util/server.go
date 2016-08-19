@@ -18,10 +18,11 @@ type Server struct {
 	online          map[string]*net.Conn //在线
 	businesshandler func(p *PacketData)  //业务事件处理
 	lock            sync.Mutex           //锁
+	offlinehandler  func(id string)      //客户端掉线事件
 }
 
 //
-func NewServer(addr string, handler func(p *PacketData)) (s *Server, err error) {
+func NewServer(addr string, handler func(p *PacketData), offlineHandler func(clientid string)) (s *Server, err error) {
 	s = new(Server)
 	s.listen, err = net.Listen("tcp", addr)
 	if err != nil {
@@ -29,6 +30,7 @@ func NewServer(addr string, handler func(p *PacketData)) (s *Server, err error) 
 	}
 	s.online = make(map[string]*net.Conn)
 	s.businesshandler = handler
+	s.offlinehandler = offlineHandler
 	msgdump := make(chan *PacketData, 20)
 	go s.processBusinessHandler(msgdump)
 	go func() { //接受外部连接
@@ -41,6 +43,7 @@ func NewServer(addr string, handler func(p *PacketData)) (s *Server, err error) 
 			}
 		}
 	}()
+	go s.checkheartbeat()
 	return
 }
 
@@ -81,7 +84,8 @@ func (s *Server) handler(pc chan<- *PacketData, conn *net.Conn) {
 				case ACT_RESPONSE_CLIENTID: //加入
 					clientId = string(data)
 					s.join(clientId, conn)
-				case ACT_REQUEST_HEARTBEAT: //心跳回应
+				case ACT_RESPONSE_HEARTBEAT: //心跳回应
+					fmt.Print(".")
 					s.processheartbeat(clientId, data, conn)
 				default:
 					pc <- &PacketData{Act: act, Data: data, SourceId: clientId}
@@ -124,10 +128,9 @@ func (s *Server) checkheartbeat() {
 
 //处理心跳回应
 func (s *Server) processheartbeat(clientId string, data []byte, conn *net.Conn) {
-	fmt.Println(clientId, "回应心跳")
 	now := time.Now().Unix()
 	cnow := int64(byte2int(data))
-	if cnow > now-10 { //超时10秒开始清理
+	if cnow+15 < now { //超时15秒开始清理
 		s.closeClient(conn)
 	}
 }
@@ -148,9 +151,30 @@ func (s *Server) closeClient(conn *net.Conn) {
 	for k, v := range s.online {
 		if v == conn {
 			delete(s.online, k)
+			if s.offlinehandler != nil { //出发用户掉线事件
+				go s.offlinehandler(k)
+			}
 			break
 		}
 	}
 	s.lock.Unlock()
 	(*conn).Close()
+}
+
+//取所有在线用户
+func (s *Server) GetAllClient() []string {
+	ret := make([]string, 0)
+	for k, _ := range s.online {
+		ret = append(ret, k)
+	}
+	return ret
+}
+
+//判断是否在线
+func (s *Server) IsOnline(id string) bool {
+	if _, ok := s.online[id]; ok {
+		return true
+	} else {
+		return false
+	}
 }

@@ -13,8 +13,6 @@ func main() {
 	})
 	time.Sleep(2 * time.Second)
 	c.Write(10, []byte("服务器你好"))
-	c.Write(10, []byte("服务器你好"))
-	c.Write(10, []byte("服务器你好"))
 	lock := make(chan bool)
 	<-lock
 }

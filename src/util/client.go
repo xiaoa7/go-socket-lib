@@ -60,6 +60,7 @@ func (c *Client) read(pc chan<- *PacketData) {
 				case ACT_REQUEST_CLIENTID:
 					c.conn.Write(EnPacket(ACT_RESPONSE_CLIENTID, []byte(c.id)))
 				case ACT_REQUEST_HEARTBEAT:
+					fmt.Print(".")
 					c.conn.Write(EnPacket(ACT_RESPONSE_HEARTBEAT, bdata))
 				default:
 					pc <- NewPacketDate(act, bdata)
